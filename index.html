@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pokemon 3D WebGL - Full RPG & Types</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'VT323', monospace; touch-action: none; user-select: none; }
+        #game-canvas { width: 100vw; height: 100vh; display: block; }
+        
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .d-pad { position: absolute; bottom: 30px; left: 30px; width: 120px; height: 120px; pointer-events: auto; }
+        .btn { position: absolute; background: rgba(255, 255, 255, 0.5); border: 2px solid #333; border-radius: 5px; width: 40px; height: 40px; text-align: center; line-height: 40px; font-size: 20px; font-weight: bold; }
+        .btn:active { background: rgba(200, 200, 200, 0.8); }
+        #up { top: 0; left: 40px; } #down { bottom: 0; left: 40px; } #left { top: 40px; left: 0; } #right { top: 40px; right: 0; }
+        #action-buttons { position: absolute; bottom: 30px; right: 30px; pointer-events: auto; }
+        #btn-a { width: 60px; height: 60px; border-radius: 50%; background: rgba(255, 0, 0, 0.6); color: white; line-height: 60px; text-align: center; font-size: 24px; font-weight: bold; border: 3px solid darkred; }
+        #btn-team { position: absolute; top: 10px; right: 10px; padding: 10px; background: #2b5b84; color: white; border: 3px solid white; border-radius: 8px; font-size: 18px; pointer-events: auto; font-family: 'VT323'; cursor: pointer; }
+        #btn-team:active { background: #18385d; }
+        #action-prompt { position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: white; padding: 5px 15px; border: 2px solid white; border-radius: 20px; font-size: 22px; display: none; pointer-events: none; }
+        #hud { position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.8); color: black; padding: 5px 10px; border: 2px solid black; border-radius: 5px; font-size: 18px; pointer-events: auto;}
+        
+        /* BATTLE UI */
+        #battle-ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; pointer-events: none; }
+        .hp-box { position: absolute; background: #ffffe6; border: 3px solid #555; border-radius: 8px; padding: 8px; width: 200px; box-shadow: 2px 2px 0px rgba(0,0,0,0.3); pointer-events: auto; }
+        .hp-box .name-row { display: flex; justify-content: space-between; font-size: 22px; font-weight: bold; text-transform: uppercase; margin-bottom: 5px;}
+        .hp-bar-container { background: #555; border: 2px solid #222; border-radius: 10px; width: 100%; height: 12px; position: relative; overflow: hidden; margin-bottom: 2px; }
+        .hp-bar { height: 100%; background: #00ff00; width: 100%; transition: width 0.3s; }
+        .exp-bar-container { background: #555; border: 1px solid #222; width: 100%; height: 4px; position: relative; overflow: hidden; }
+        .exp-bar { height: 100%; background: #00ccff; width: 0%; transition: width 0.3s; }
+        .hp-text { text-align: right; font-size: 18px; margin-top: 2px; font-weight: bold;}
+        #enemy-hud { top: 20px; left: 20px; border-bottom-right-radius: 20px; }
+        #player-hud { bottom: 120px; right: 20px; border-top-left-radius: 20px; }
+        
+        .battle-bottom { position: absolute; bottom: 0; left: 0; width: 100%; height: 100px; display: flex; pointer-events: auto; }
+        .dialogue-box { flex: 1; background: #2b5b84; border: 6px solid #d0d0d8; border-radius: 10px; margin: 5px; color: white; font-size: 24px; padding: 15px; box-shadow: inset 0 0 0 2px #18385d; }
+        .action-box { width: 200px; background: white; border: 6px solid #e06060; border-radius: 10px; margin: 5px; display: flex; flex-wrap: wrap; box-shadow: inset 0 0 0 2px #882020; overflow:hidden;}
+        .action-btn { width: 50%; height: 50%; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: bold; cursor: pointer; color: #333; text-transform: uppercase; text-align:center; }
+        .action-btn:active { background: #eee; }
+        .action-btn.disabled { color: #aaa; text-decoration: line-through; pointer-events: none; }
+        #moves-box { display: none; width: 250px; background: white; border: 6px solid #60c060; border-radius: 10px; margin: 5px; flex-wrap: wrap; box-shadow: inset 0 0 0 2px #208820; pointer-events: auto; overflow-y:auto;}
+        
+        .dmg-text { position: absolute; transform: translate(-50%, -50%); pointer-events: none; animation: floatUp 1s ease-out forwards; z-index: 50; }
+        @keyframes floatUp { 0% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -60px); } }
+        .dmg-normal { color: white; font-size: 24px; text-shadow: 2px 2px 0 #000; }
+        .dmg-special { color: #ffaa00; font-size: 32px; font-weight: bold; text-shadow: 2px 2px 0 #000, 0 0 10px #ff0000; }
+        .dmg-ultimate { color: #ff0000; font-size: 48px; font-weight: bold; text-shadow: 3px 3px 0 #000, 0 0 20px #ffaa00; text-transform: uppercase; }
+
+        .menu-screen { position: absolute; top: 10%; left: 10%; width: 80%; height: 80%; background: #2b5b84; border: 6px solid #d0d0d8; border-radius: 10px; color: white; padding: 20px; display: none; pointer-events: auto; overflow-y: auto; box-sizing: border-box; box-shadow: inset 0 0 0 2px #18385d, 0 10px 20px rgba(0,0,0,0.8); z-index: 100; }
+        .close-btn { position: absolute; top: 10px; right: 10px; background: red; color: white; border: 2px solid white; padding: 5px 15px; cursor: pointer; font-family: 'VT323'; font-size: 20px;}
+        .team-card { background: rgba(255,255,255,0.1); border: 2px solid #fff; margin-bottom: 10px; padding: 10px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .team-info { flex: 1; }
+        .team-skills { flex: 1; font-size: 16px; color: #ffcc00; }
+        .team-actions button { background: #e06060; border: 2px solid #fff; color: white; padding: 5px 10px; font-family: 'VT323'; font-size: 18px; cursor: pointer; margin-left: 5px;}
+        
+        .menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border: 4px solid black; border-radius: 10px; display: none; pointer-events: auto; text-align: center; width: 80%; max-width: 300px; font-size: 20px; z-index: 90;}
+        .menu button { margin: 5px; padding: 10px; font-size: 18px; width: 100%; font-family: 'VT323', monospace; cursor: pointer; }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+</head>
+<body>
+
+    <div id="game-canvas"></div>
+    <div id="ui-layer">
+        <div id="hud">Gold: <span id="gold-count">100</span> | Food: <span id="food-count">2</span></div>
+        <button id="btn-team" onclick="TeamMenu.open()">TEAM / PKMN</button>
+        <div id="action-prompt">▼ Press 'A' to Interact</div>
+        <div class="d-pad" id="movement-controls">
+            <div class="btn" id="up">W</div><div class="btn" id="left">A</div><div class="btn" id="right">D</div><div class="btn" id="down">S</div>
+        </div>
+        <div id="action-buttons"><div id="btn-a">A</div></div>
+    </div>
+
+    <div id="battle-ui">
+        <div class="hp-box" id="enemy-hud">
+            <div class="name-row"><span id="enemy-name">Enemy</span> <span style="font-size:18px;">Lv<span id="enemy-lvl">5</span></span></div>
+            <div class="hp-bar-container"><div class="hp-bar" id="enemy-hp-bar"></div></div>
+        </div>
+        <div class="hp-box" id="player-hud">
+            <div class="name-row"><span id="player-name">Pikachu</span> <span style="font-size:18px;">Lv<span id="player-lvl">5</span></span></div>
+            <div class="hp-bar-container"><div class="hp-bar" id="player-hp-bar"></div></div>
+            <div class="exp-bar-container"><div class="exp-bar" id="player-exp-bar"></div></div>
+            <div class="hp-text"><span id="player-hp-text">20</span> / <span id="player-maxhp-text">20</span></div>
+        </div>
+        <div class="battle-bottom">
+            <div class="dialogue-box" id="battle-dialogue">What will you do?</div>
+            <div class="action-box" id="main-actions">
+                <div class="action-btn" onclick="BattleSystem.showMoves()">FIGHT</div>
+                <div class="action-btn" onclick="BattleSystem.showBag()">BAG</div>
+                <div class="action-btn" onclick="BattleSystem.showTeam()">PKMN</div>
+                <div class="action-btn" onclick="BattleSystem.runAway()">RUN</div>
+            </div>
+            <div class="action-box" id="moves-box" style="display:none; width:auto; min-width:250px;"></div>
+        </div>
+    </div>
+
+    <div id="team-screen" class="menu-screen">
+        <button class="close-btn" onclick="TeamMenu.close()">X</button>
+        <h1 style="margin-top:0; color:#ffcc00; text-align:center;">MY POKEMON TEAM</h1>
+        <div id="team-list"></div>
+    </div>
+
+    <div id="interaction-menu" class="menu">
+        <h2 id="int-title">Menu</h2>
+        <div id="int-buttons"></div>
+        <button onclick="GameLogic.closeMenus()">Close</button>
+    </div>
+
+<script>
+    // ==========================================
+    // 1. TYPE CHART & DAMAGE LOGIC
+    // ==========================================
+    const TypeChart = {
+        "Fire": { strong: ["Grass", "Bug", "Steel"], weak: ["Water", "Ground", "Rock"] },
+        "Water": { strong: ["Fire", "Ground", "Rock"], weak: ["Electric", "Grass"] },
+        "Grass": { strong: ["Water", "Ground", "Rock"], weak: ["Fire", "Bug", "Flying"] },
+        "Electric": { strong: ["Water", "Flying"], weak: ["Ground"] },
+        "Flying": { strong: ["Grass", "Bug"], weak: ["Electric", "Rock"] },
+        "Normal": { strong: [], weak: [] },
+        "Bug": { strong: ["Grass"], weak: ["Fire", "Flying", "Rock"] },
+        "Psychic": { strong: [], weak: ["Bug"] }
+    };
+
+    function getTypeMult(atkType, defType) {
+        let finalMult = 1;
+        let atkStats = TypeChart[atkType];
+        let defStats = TypeChart[defType];
+        if (atkStats && atkStats.strong.includes(defType)) finalMult *= 2;
+        if (defStats && defStats.weak.includes(atkType)) finalMult = 2;
+        if (atkStats && atkStats.weak.includes(defType)) finalMult *= 0.5;
+        if (defStats && defStats.strong.includes(atkType)) finalMult = 0.5;
+        return finalMult;
+    }
+
+    // ==========================================
+    // 2. GAME API & MOVESET DATA
+    // ==========================================
+    const GameAPI = {
+    models: {}, customPokemons: [], worldSize: 100, textureLoader: new THREE.TextureLoader(),
+    
+    // NEW: Initialize the GLTF Loader
+    gltfLoader: new THREE.GLTFLoader(),
+
+    addPokemon: function(name, type, baseHp, baseAtk, moves) { 
+        this.customPokemons.push({ name, type, baseHp, baseAtk, moves }); 
+    },
+
+    // NEW: Function to load 3D Models and hide the placeholder boxes
+    replaceWithModel: function(placeholderMesh, modelUrl, scale = 1, offsetY = 0) {
+        this.gltfLoader.load(modelUrl, (gltf) => {
+            const model = gltf.scene;
+            model.scale.set(scale, scale, scale);
+            model.position.y = offsetY; // Adjust height if model floats
+            
+            // Make the new model cast and receive shadows
+            model.traverse((child) => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                }
+            });
+
+            placeholderMesh.add(model); // Attach model to the box
+            placeholderMesh.material.visible = false; // Hide the colored box!
+        }, undefined, (error) => {
+            console.error("Error loading model:", modelUrl, error);
+        });
+    },
+
+    // (Keep your existing applyTexture function here)
+    applyTexture: function(mesh, textureUrl, repeatX = 1, repeatY = 1) {
+        this.textureLoader.load(textureUrl, function(texture) {
+            texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(repeatX, repeatY); mesh.material.map = texture; mesh.material.needsUpdate = true;
+        });
+    }
+};
+
+    const pikaMoves = [ { name: "Tackle", type: "normal", mult: 1, reqLvl: 1 }, { name: "Spark", type: "special", mult: 1.8, reqLvl: 4 }, { name: "Thunder", type: "ultimate", mult: 3.5, reqLvl: 10 } ];
+    const basicMoves = [ { name: "Scratch", type: "normal", mult: 1, reqLvl: 1 }, { name: "Bite", type: "special", mult: 1.5, reqLvl: 3 }, { name: "Hyper Beam", type: "ultimate", mult: 3.0, reqLvl: 12 } ];
+    const fireMoves = [ { name: "Tackle", type: "normal", mult: 1, reqLvl: 1 }, { name: "Ember", type: "special", mult: 1.5, reqLvl: 4 }, { name: "Fire Blast", type: "ultimate", mult: 3.2, reqLvl: 10 } ];
+    const waterMoves = [ { name: "Tackle", type: "normal", mult: 1, reqLvl: 1 }, { name: "Water Gun", type: "special", mult: 1.5, reqLvl: 4 }, { name: "Hydro Pump", type: "ultimate", mult: 3.2, reqLvl: 10 } ];
+
+    GameAPI.addPokemon("Pidgey", "Flying", 15, 4, basicMoves);
+    GameAPI.addPokemon("Rattata", "Normal", 12, 5, basicMoves);
+    GameAPI.addPokemon("Charmander", "Fire", 18, 5, fireMoves);
+    GameAPI.addPokemon("Squirtle", "Water", 20, 4, waterMoves);
+    GameAPI.addPokemon("Bulbasaur", "Grass", 20, 5, [ { name: "Tackle", type: "normal", mult: 1, reqLvl: 1 }, { name: "Vine Whip", type: "special", mult: 1.7, reqLvl: 5 }, { name: "Solar Beam", type: "ultimate", mult: 4.0, reqLvl: 15 } ]);
+
+    function createPokemon(name, type, level, baseHp, baseAtk, moves) {
+        let maxHp = baseHp + (level * 5); let attack = baseAtk + (level * 2);
+        return { name, type, level, hp: maxHp, maxHp, attack, exp: 0, moves: JSON.parse(JSON.stringify(moves)) };
+    }
+
+    const PlayerState = { gold: 100, food: 5, activeIdx: 0, team: [ createPokemon("Pikachu", "Electric", 5, 18, 5, pikaMoves) ] };
+    let currentRoom = "WORLD"; let gameState = "FREE_ROAM"; let currentEnemy = null;
+
+    // ==========================================
+    // 3. THREE.JS ENVIRONMENT SETUP
+    // ==========================================
+    const scene = new THREE.Scene(); scene.background = new THREE.Color(0x87CEEB);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; 
+    document.getElementById('game-canvas').appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0x606060));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2); sun.position.set(20, 40, 20); sun.castShadow = true;
+    sun.shadow.mapSize.width = 2048; sun.shadow.mapSize.height = 2048; scene.add(sun);
+
+    const createMesh = (geo, mat, castShad=true, recShad=true) => { let m = new THREE.Mesh(geo, mat); m.castShadow = castShad; m.receiveShadow = recShad; return m; };
+
+    const worldGroup = new THREE.Group(); const hospitalGroup = new THREE.Group();
+    const stadiumGroup = new THREE.Group(); const battleGroup = new THREE.Group();
+    scene.add(worldGroup); scene.add(hospitalGroup); scene.add(stadiumGroup); scene.add(battleGroup);
+
+    const playerMesh = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffff00 })); playerMesh.position.y = 0.5; scene.add(playerMesh);
+    GameAPI.replaceWithModel(playerMesh, 'models/player.glb', 0.5, -0.5);
+    const ground = createMesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ color: 0x228B22 }), false, true); ground.rotation.x = -Math.PI / 2; worldGroup.add(ground);
+    GameAPI.applyTexture(ground, 'textures/grass.jpg', 20, 20);
+    //GameAPI.replaceWithModel(ground, 'models/grass.glb', 1, 0); // Add this line to replace the ground with a model
+
+    const hospExt = createMesh(new THREE.BoxGeometry(4, 3, 4), new THREE.MeshLambertMaterial({ color: 0xcc0000 })); hospExt.position.set(-5, 1.5, -10); worldGroup.add(hospExt);
+    const hospDoor = createMesh(new THREE.PlaneGeometry(1.5, 2), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false); hospDoor.position.set(-5, 1, -7.99); worldGroup.add(hospDoor);
+    const stadExt = createMesh(new THREE.CylinderGeometry(5, 5, 4, 16), new THREE.MeshLambertMaterial({ color: 0x888888 })); stadExt.position.set(10, 2, -15); worldGroup.add(stadExt);
+    const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false); stadDoor.position.set(10, 1.25, -9.99); worldGroup.add(stadDoor);
+
+    hospitalGroup.visible = false;
+    const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); hDesk.position.set(0, 0.75, -4); hospitalGroup.add(hDesk);
+    const nurseJoy = createMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff66cc })); nurseJoy.position.set(0, 1.5, -5); hospitalGroup.add(nurseJoy);
+    GameAPI.replaceWithModel(nurseJoy, 'models/nurse.glb', 1, -0.75);
+    const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); hExit.rotation.x = -Math.PI/2; hExit.position.set(0, 0.01, 7); hospitalGroup.add(hExit);
+    
+    stadiumGroup.visible = false;
+    const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); bossNPC.position.set(0, 1, -6); stadiumGroup.add(bossNPC);
+    GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1);
+    const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); sExit.rotation.x = -Math.PI/2; sExit.position.set(0, 0.01, 9); stadiumGroup.add(sExit);
+
+    battleGroup.visible = false;
+    const battleFloor = createMesh(new THREE.CylinderGeometry(8, 8, 0.5, 32), new THREE.MeshLambertMaterial({ color: 0xddeedd })); battleGroup.add(battleFloor);
+    const bPlayerMesh = createMesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xffff00 })); bPlayerMesh.position.set(-2, 1, 3); battleGroup.add(bPlayerMesh);
+    const bEnemyMesh = createMesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff0000 })); bEnemyMesh.position.set(2, 1, -3); battleGroup.add(bEnemyMesh);
+
+    camera.position.set(playerMesh.position.x, 5, playerMesh.position.z + 8); camera.lookAt(playerMesh.position);
+
+    const keys = { w: false, a: false, s: false, d: false };
+    const bindBtn = (id, key) => { const el = document.getElementById(id); el.addEventListener('touchstart', (e)=>{e.preventDefault(); keys[key]=true;}); el.addEventListener('touchend', (e)=>{e.preventDefault(); keys[key]=false;}); el.addEventListener('mousedown', ()=>{keys[key]=true;}); el.addEventListener('mouseup', ()=>{keys[key]=false;}); };
+    bindBtn('up', 'w'); bindBtn('down', 's'); bindBtn('left', 'a'); bindBtn('right', 'd');
+    document.getElementById('btn-a').addEventListener('click', () => { if(gameState === "FREE_ROAM") GameLogic.interact(); });
+
+    // ==========================================
+    // 4. TEAM MENU & ROOM INTERACTION
+    // ==========================================
+    const TeamMenu = {
+        open: function() {
+            if(gameState !== "FREE_ROAM") return;
+            gameState = "MENU"; document.getElementById('team-screen').style.display = 'block'; this.render();
+        },
+        close: function() { document.getElementById('team-screen').style.display = 'none'; gameState = "FREE_ROAM"; },
+        render: function() {
+            const list = document.getElementById('team-list'); list.innerHTML = ""; document.getElementById('gold-count').innerText = PlayerState.gold;
+            PlayerState.team.forEach((pkmn, idx) => {
+                let reqExp = pkmn.level * 20; let expPct = Math.min(100, (pkmn.exp / reqExp) * 100);
+                let skillsHTML = pkmn.moves.map(m => `<span style="color:${pkmn.level >= m.reqLvl ? '#0f0' : '#888'}">${m.name} (Lv.${m.reqLvl})</span>`).join(" | ");
+                let card = document.createElement('div'); card.className = 'team-card';
+                card.innerHTML = `
+                    <div class="team-info"><h2>${idx===PlayerState.activeIdx ? '⭐' : ''} ${pkmn.name} [${pkmn.type}] - Lv. ${pkmn.level}</h2>
+                        <p>HP: ${pkmn.hp}/${pkmn.maxHp} | ATK: ${pkmn.attack}</p>
+                        <div class="exp-bar-container" style="width:200px;"><div class="exp-bar" style="width:${expPct}%"></div></div>
+                        <p style="font-size:14px;">EXP: ${pkmn.exp} / ${reqExp}</p></div>
+                    <div class="team-skills"><b>Skills:</b><br>${skillsHTML}</div>
+                    <div class="team-actions">${idx !== PlayerState.activeIdx && pkmn.hp > 0 ? `<button onclick="TeamMenu.setActive(${idx})">Set Active</button>` : ''}
+                        <button onclick="TeamMenu.levelUp(${idx})">Lvl Up (50G)</button></div>
+                `; list.appendChild(card);
+            });
+        },
+        setActive: function(idx) { PlayerState.activeIdx = idx; this.render(); },
+        levelUp: function(idx) {
+            if(PlayerState.gold >= 50) { PlayerState.gold -= 50; let pkmn = PlayerState.team[idx]; pkmn.level++; pkmn.maxHp+=5; pkmn.hp=pkmn.maxHp; pkmn.attack+=2; pkmn.exp=0; this.render(); GameLogic.updateHUD(); } 
+            else alert("Not enough Gold! You need 50G.");
+        }
+    };
+
+    const GameLogic = {
+        updateHUD: function() { document.getElementById('gold-count').innerText = PlayerState.gold; document.getElementById('food-count').innerText = PlayerState.food; },
+        teleportTo: function(room, x, z) {
+            worldGroup.visible = (room==="WORLD"); hospitalGroup.visible = (room==="HOSPITAL"); stadiumGroup.visible = (room==="STADIUM");
+            scene.background = new THREE.Color(room==="WORLD"?0x87CEEB:0x000000); currentRoom = room; playerMesh.position.set(x, 0.5, z); camera.position.set(x, 5, z+8);
+        },
+        interact: function() {
+            if (currentRoom === "HOSPITAL") {
+                if(playerMesh.position.distanceTo(hDesk.position)<3.5) {
+                    this.openMenu("Pokemon Center",[ { text: "Heal All Team", action: () => { PlayerState.team.forEach(p=>p.hp=p.maxHp); alert("Team Healed!"); this.updateHUD(); this.closeMenus();} }, { text: "Buy Food (10G)", action: () => { if(PlayerState.gold>=10){PlayerState.gold-=10; PlayerState.food++; this.updateHUD();}else alert("Not enough gold.");} } ]);
+                }
+                // FIX: Hospital Exit Logic Corrected
+                else if (playerMesh.position.distanceTo(hExit.position)<2) { this.teleportTo("WORLD", -5, -6); }
+            } else if (currentRoom === "STADIUM") {
+                if(playerMesh.position.distanceTo(bossNPC.position)<3) {
+                    this.openMenu("Boss Mewtwo",[{ text: "Battle Boss!", action: () => { this.closeMenus(); BattleSystem.startBossFight(); } }]);
+                }
+                // FIX: Stadium Exit Logic Corrected
+                else if (playerMesh.position.distanceTo(sExit.position)<2) { this.teleportTo("WORLD", 10, -7); }
+            }
+        },
+        openMenu: function(t, btns) { gameState="MENU"; document.getElementById('int-title').innerText=t; let c=document.getElementById('int-buttons'); c.innerHTML=""; btns.forEach(b=>{let btn=document.createElement('button'); btn.innerText=b.text; btn.onclick=b.action; c.appendChild(btn);}); document.getElementById('interaction-menu').style.display='block'; },
+        closeMenus: function() { document.getElementById('interaction-menu').style.display='none'; gameState="FREE_ROAM"; }
+    };
+
+    // ==========================================
+    // 5. ANIMATIONS & BATTLE SYSTEM
+    // ==========================================
+    function showFloatingDamage(mesh, amount, type) {
+        const div = document.createElement('div'); div.innerText = amount; div.className = `dmg-text dmg-${type}`;
+        const pos = mesh.position.clone(); pos.project(camera);
+        div.style.left = `${(pos.x * .5 + .5) * window.innerWidth}px`; div.style.top = `${(-(pos.y * .5) + .5) * window.innerHeight}px`;
+        document.body.appendChild(div); setTimeout(() => div.remove(), 1000);
+    }
+    function animatePhysicalAttack(mesh, targetMesh, type, callback) {
+        let origZ = mesh.position.z; let origY = mesh.position.y;
+        if(type === 'normal') { mesh.position.z += (mesh === bPlayerMesh ? -1.5 : 1.5); setTimeout(() => { mesh.position.z = origZ; targetMesh.position.x += 0.5; setTimeout(()=>targetMesh.position.x-=0.5, 100); callback(); }, 200); } 
+        else if(type === 'special') { let r=0; let int=setInterval(()=>{mesh.rotation.y+=0.5; r+=0.5; if(r>Math.PI*2){clearInterval(int); mesh.rotation.y=0; targetMesh.position.x-=0.5; setTimeout(()=>targetMesh.position.x+=0.5, 100); callback();}}, 20); } 
+        else if(type === 'ultimate') { mesh.scale.set(2, 2, 2); mesh.position.y += 2; setTimeout(() => { mesh.scale.set(1, 1, 1); mesh.position.y = origY; document.body.style.transform = "translate(10px, 10px)"; setTimeout(()=>document.body.style.transform="none", 150); targetMesh.rotation.z = 0.5; setTimeout(()=>targetMesh.rotation.z=0, 200); callback(); }, 500); }
+    }
+
+    const BattleSystem = {
+        getActive: function() { return PlayerState.team[PlayerState.activeIdx]; },
+        startWildEncounter: function() {
+            let myPkmn = this.getActive();
+            let isTough = Math.random() < 0.3; let levelOffset = isTough ? Math.floor(Math.random()*3)+1 : Math.floor(Math.random()*3)-2;
+            let eLevel = Math.max(1, myPkmn.level + levelOffset);
+            let tpl = GameAPI.customPokemons[Math.floor(Math.random() * GameAPI.customPokemons.length)];
+            currentEnemy = createPokemon(tpl.name, tpl.type, eLevel, tpl.baseHp, tpl.baseAtk, tpl.moves);
+            currentEnemy.isBoss = false; this.initBattleScene();
+        },
+        startBossFight: function() {
+            currentEnemy = createPokemon("Mewtwo", "Psychic", 50, 100, 25, basicMoves); currentEnemy.maxHp = 300; currentEnemy.hp = 300; currentEnemy.isBoss = true;
+            this.initBattleScene();
+        },
+        initBattleScene: function() {
+            gameState = "BATTLE_ANIMATING"; keys.w = keys.a = keys.s = keys.d = false;
+            worldGroup.visible = hospitalGroup.visible = stadiumGroup.visible = false; battleGroup.visible = true; battleGroup.position.copy(playerMesh.position); 
+            camera.position.set(battleGroup.position.x - 5, battleGroup.position.y + 3, battleGroup.position.z + 6); camera.lookAt(battleGroup.position.x + 2, battleGroup.position.y + 1, battleGroup.position.z - 3);
+            document.getElementById('movement-controls').style.display='none'; document.getElementById('action-buttons').style.display='none'; document.getElementById('action-prompt').style.display='none'; document.getElementById('battle-ui').style.display='block';
+            
+            // Auto switch to first alive if active is dead
+            if (this.getActive().hp <= 0) { PlayerState.activeIdx = PlayerState.team.findIndex(p => p.hp > 0); }
+            
+            this.hideMoves(); this.updateBars();
+            this.typeText(`Wild ${currentEnemy.name.toUpperCase()} appeared!`, () => { this.typeText(`Go! ${this.getActive().name.toUpperCase()}!`, () => { gameState = "BATTLE"; }); });
+        },
+        updateBars: function() {
+            let active = this.getActive(); const getC = (pct) => pct>50?'#00ff00':pct>20?'#ffcc00':'#ff0000';
+            document.getElementById('player-name').innerText = active.name.toUpperCase(); document.getElementById('player-lvl').innerText = active.level;
+            document.getElementById('enemy-name').innerText = currentEnemy.name.toUpperCase(); document.getElementById('enemy-lvl').innerText = currentEnemy.level;
+
+            let pPct = Math.max(0, (active.hp/active.maxHp)*100); document.getElementById('player-hp-bar').style.width = pPct+'%'; document.getElementById('player-hp-bar').style.backgroundColor = getC(pPct);
+            document.getElementById('player-hp-text').innerText = Math.max(0, active.hp); document.getElementById('player-maxhp-text').innerText = active.maxHp;
+            let ePct = Math.max(0, (currentEnemy.hp/currentEnemy.maxHp)*100); document.getElementById('enemy-hp-bar').style.width = ePct+'%'; document.getElementById('enemy-hp-bar').style.backgroundColor = getC(ePct);
+            let expPct = Math.min(100, (active.exp / (active.level*20)) * 100); document.getElementById('player-exp-bar').style.width = expPct+'%';
+        },
+        typeText: function(text, callback) {
+            gameState = "BATTLE_ANIMATING"; const box = document.getElementById('battle-dialogue'); box.innerText = ""; let i = 0;
+            const tWriter = setInterval(() => { box.innerText += text.charAt(i); i++; if (i>=text.length) { clearInterval(tWriter); setTimeout(()=>{if(callback)callback();}, 800); } }, 20);
+        },
+        
+        // --- BATTLE MENUS ---
+        hideMoves: function() { document.getElementById('main-actions').style.display='flex'; document.getElementById('moves-box').style.display='none'; },
+        showMoves: function() { 
+            if(gameState!=="BATTLE") return; let active = this.getActive(); let box = document.getElementById('moves-box'); box.innerHTML = "";
+            active.moves.forEach(m => { let unlocked = active.level >= m.reqLvl; let btn = document.createElement('div'); btn.className = `action-btn ${!unlocked ? 'disabled' : ''}`; btn.innerHTML = `${m.name} <br><span style="font-size:12px">(${m.type})</span>`; if(unlocked) btn.onclick = () => this.executeMove(m); box.appendChild(btn); });
+            let bck = document.createElement('div'); bck.className="action-btn"; bck.innerText="BACK"; bck.onclick = ()=>this.hideMoves(); box.appendChild(bck); document.getElementById('main-actions').style.display='none'; box.style.display='flex'; 
+        },
+        showBag: function() {
+            if(gameState!=="BATTLE") return; let box = document.getElementById('moves-box'); box.innerHTML = "";
+            let btnF = document.createElement('div'); btnF.className="action-btn"; btnF.innerHTML=`FOOD (x${PlayerState.food})`; btnF.onclick=()=>this.useBag(); box.appendChild(btnF);
+            let btnC = document.createElement('div'); btnC.className="action-btn"; btnC.innerHTML=`POKEBALL`; btnC.onclick=()=>this.tryCatch(); box.appendChild(btnC);
+            let bck = document.createElement('div'); bck.className="action-btn"; bck.innerText="BACK"; bck.onclick = ()=>this.hideMoves(); box.appendChild(bck);
+            document.getElementById('main-actions').style.display='none'; box.style.display='flex'; 
+        },
+        showTeam: function() {
+            if(gameState!=="BATTLE") return; let box = document.getElementById('moves-box'); box.innerHTML = "";
+            PlayerState.team.forEach((p, idx) => {
+                let btn = document.createElement('div'); btn.className = `action-btn ${p.hp <= 0 ? 'disabled' : ''}`; btn.style.fontSize="14px";
+                btn.innerHTML = `${p.name} (Lv.${p.level})<br>HP: ${p.hp}/${p.maxHp}`;
+                if(p.hp > 0) btn.onclick = () => this.switchPokemon(idx); box.appendChild(btn);
+            });
+            let bck = document.createElement('div'); bck.className="action-btn"; bck.innerText="BACK"; bck.onclick = ()=>this.hideMoves(); box.appendChild(bck);
+            document.getElementById('main-actions').style.display='none'; box.style.display='flex'; 
+        },
+
+        // --- BATTLE ACTIONS ---
+        switchPokemon: function(idx) {
+            if (idx === PlayerState.activeIdx) { this.typeText(`${this.getActive().name} is already out!`, () => { gameState="BATTLE"; }); return; }
+            PlayerState.activeIdx = idx; this.hideMoves(); this.updateBars();
+            this.typeText(`Go! ${this.getActive().name.toUpperCase()}!`, () => this.enemyTurn());
+        },
+        executeMove: function(moveObj) {
+            if(gameState !== "BATTLE") return; this.hideMoves(); let active = this.getActive();
+            // TYPE EFFECTIVENESS & LEVEL SCALING
+            let mult = getTypeMult(active.type, currentEnemy.type);
+            let dmg = Math.floor((active.attack + active.level) * moveObj.mult * mult);
+            if(dmg < 1) dmg = 1;
+            let effMsg = mult > 1 ? " It's super effective!" : (mult < 1 ? " It's not very effective..." : "");
+
+            this.typeText(`${active.name.toUpperCase()} used ${moveObj.name.toUpperCase()}!${effMsg}`, () => {
+                animatePhysicalAttack(bPlayerMesh, bEnemyMesh, moveObj.type, () => {
+                    currentEnemy.hp -= dmg; showFloatingDamage(bEnemyMesh, dmg, moveObj.type); this.updateBars();
+                    if (currentEnemy.hp <= 0) setTimeout(()=>this.endFight(true), 800); else setTimeout(() => this.enemyTurn(), 800);
+                });
+            });
+        },
+        enemyTurn: function() {
+            let active = this.getActive(); 
+            // FIX: Dynamic Enemy Damage Scaling & Types
+            let mult = getTypeMult(currentEnemy.type, active.type);
+            let dmg = Math.floor((currentEnemy.attack + currentEnemy.level) * 1.2 * mult);
+            if(dmg < 1) dmg = 1;
+            let effMsg = mult > 1 ? " It's super effective!" : (mult < 1 ? " It's not very effective..." : "");
+
+            this.typeText(`${currentEnemy.name.toUpperCase()} used TACKLE!${effMsg}`, () => {
+                animatePhysicalAttack(bEnemyMesh, bPlayerMesh, 'normal', () => {
+                    active.hp -= dmg; showFloatingDamage(bPlayerMesh, dmg, 'normal'); this.updateBars();
+                    if (active.hp <= 0) {
+                        this.typeText(`${active.name.toUpperCase()} fainted!`, () => this.checkNextPokemon());
+                    } else { this.typeText(`What will you do?`, () => { gameState = "BATTLE"; }); }
+                });
+            });
+        },
+        checkNextPokemon: function() {
+            let nextIdx = PlayerState.team.findIndex(p => p.hp > 0);
+            if (nextIdx !== -1) {
+                PlayerState.activeIdx = nextIdx; this.updateBars();
+                this.typeText(`Go! ${this.getActive().name.toUpperCase()}!`, () => { gameState = "BATTLE"; });
+            } else { this.endFight(false); } // all fainted
+        },
+        tryCatch: function() {
+            if(gameState !== "BATTLE") return; this.hideMoves();
+            if(currentEnemy.isBoss) { this.typeText("You cannot catch a Boss!", () => { gameState="BATTLE"; }); return; }
+            let catchChance = 1.0 - (currentEnemy.hp / currentEnemy.maxHp); 
+            this.typeText(`Threw a POKEBALL!`, () => {
+                if(Math.random() < catchChance) {
+                    this.typeText(`Gotcha! ${currentEnemy.name} was caught!`, () => {
+                        let newPkmn = JSON.parse(JSON.stringify(currentEnemy)); newPkmn.hp = newPkmn.maxHp;
+                        PlayerState.team.push(newPkmn); this.endFight(true, true);
+                    });
+                } else { this.typeText(`Oh no! It broke free!`, () => this.enemyTurn()); }
+            });
+        },
+        useBag: function() {
+            if(gameState !== "BATTLE") return; this.hideMoves(); let active = this.getActive();
+            if(PlayerState.food > 0 && active.hp < active.maxHp) {
+                PlayerState.food--; active.hp = Math.min(active.maxHp, active.hp + 30); this.updateBars(); GameLogic.updateHUD();
+                this.typeText(`Used POKEMON FOOD. Healed 30 HP!`, () => this.enemyTurn());
+            } else { this.typeText(`No food or HP is full!`, () => { gameState="BATTLE"; }); }
+        },
+        runAway: function() { if(gameState!=="BATTLE") return; if(currentEnemy.isBoss){this.typeText("Can't run!", ()=>{gameState="BATTLE";});}else{this.typeText("Got away safely!", ()=>this.exitBattleArena());} },
+        
+        endFight: function(won, caught=false) {
+            if(currentEnemy.isBoss && won) { alert("CHAMPION! You beat Mewtwo!"); window.location.href="https://www.google.com"; return; }
+            let expGained = won ? currentEnemy.level * 15 : currentEnemy.level * 4;
+            let msg = won ? `${currentEnemy.name.toUpperCase()} fainted!` : `You lost...`;
+            if(caught) msg = "Battle ended.";
+
+            this.typeText(msg, () => {
+                this.typeText(`Team gained ${expGained} EXP!`, () => {
+                    let levelUps = [];
+                    PlayerState.team.forEach(p => { p.exp += expGained; while(p.exp >= p.level * 20) { p.exp -= p.level*20; p.level++; p.maxHp+=5; p.hp=p.maxHp; p.attack+=2; levelUps.push(p.name); } });
+                    if(won) PlayerState.gold += 10;
+                    if(levelUps.length > 0) this.typeText(`${levelUps.join(', ')} Leveled Up!`, () => { this.handleDefeatOrWin(won); }); else this.handleDefeatOrWin(won);
+                });
+            });
+        },
+        handleDefeatOrWin: function(won) {
+            if(!won) { PlayerState.team.forEach(p=>p.hp=p.maxHp); this.exitBattleArena(); GameLogic.teleportTo("HOSPITAL", 0, 5); alert("Your team fainted. Rushed to hospital."); } 
+            else { this.exitBattleArena(); }
+        },
+        exitBattleArena: function() { document.getElementById('battle-ui').style.display='none'; document.getElementById('movement-controls').style.display='block'; document.getElementById('action-buttons').style.display='block'; GameLogic.updateHUD(); battleGroup.visible = false; GameLogic.teleportTo(currentRoom, playerMesh.position.x, playerMesh.position.z); gameState = "FREE_ROAM"; }
+    };
+
+    // ==========================================
+    // 6. GAME LOOP
+    // ==========================================
+    const clock = new THREE.Clock(); const moveSpeed = 0.12; GameLogic.updateHUD();
+
+    function checkCollision(nx, nz) {
+        if(currentRoom === "WORLD") { let l = 49.5; if(nx<-l||nx>l||nz<-l||nz>l) return true; if(Math.abs(nx-hospExt.position.x)<2.5&&Math.abs(nz-hospExt.position.z)<2.5) return true; if(Math.abs(nx-stadExt.position.x)<3.0&&Math.abs(nz-stadExt.position.z)<2.5) return true; } 
+        else if(currentRoom === "HOSPITAL") { if(nx<-7||nx>7||nz<-7||nz>7) return true; if(nx>-3.5&&nx<3.5&&nz>-5.5&&nz<-2.5) return true; } 
+        else if(currentRoom === "STADIUM") { if(nx<-9||nx>9||nz<-9||nz>9) return true; } return false;
+    }
+
+    function animate() {
+        requestAnimationFrame(animate); const elapsedTime = clock.getElapsedTime();
+        bossNPC.position.y = 1 + Math.sin(elapsedTime * 2) * 0.2;
+        if(typeof nurseJoy !== 'undefined') nurseJoy.rotation.y = Math.sin(elapsedTime * 1.5) * 0.3; // FIX: Nurse rotates again
+
+        if (gameState === "FREE_ROAM") {
+            let moved = false; let dx = 0, dz = 0;
+            if (keys.w) { dz -= moveSpeed; moved = true; } if (keys.s) { dz += moveSpeed; moved = true; }
+            if (keys.a) { dx -= moveSpeed; moved = true; } if (keys.d) { dx += moveSpeed; moved = true; }
+
+            if (moved) {
+                if(!checkCollision(playerMesh.position.x+dx, playerMesh.position.z)) playerMesh.position.x += dx;
+                if(!checkCollision(playerMesh.position.x, playerMesh.position.z+dz)) playerMesh.position.z += dz;
+                playerMesh.position.y = 0.5 + Math.abs(Math.sin(elapsedTime * 15)) * 0.2; playerMesh.rotation.z = Math.sin(elapsedTime*15)*0.1; playerMesh.rotation.y = Math.atan2(dx, dz);
+            } else { playerMesh.position.y = 0.5 + Math.sin(elapsedTime * 3) * 0.02; playerMesh.rotation.z = 0; }
+
+            if (moved && currentRoom === "WORLD" && Math.random() < 0.005) BattleSystem.startWildEncounter();
+
+            let promptText = "";
+            if (currentRoom === "WORLD") { if (playerMesh.position.distanceTo(hospDoor.position) < 1.5) GameLogic.teleportTo("HOSPITAL", 0, 5); else if (playerMesh.position.distanceTo(stadDoor.position) < 2.0) GameLogic.teleportTo("STADIUM", 0, 7); } 
+            else if (currentRoom === "HOSPITAL") { if (playerMesh.position.distanceTo(hExit.position) < 2) promptText = "▼ Press 'A' to Exit"; else if (playerMesh.position.distanceTo(hDesk.position) < 3.5) promptText = "▼ Press 'A' to Talk"; } 
+            else if (currentRoom === "STADIUM") { if (playerMesh.position.distanceTo(sExit.position) < 2) promptText = "▼ Press 'A' to Exit"; else if (playerMesh.position.distanceTo(bossNPC.position) < 3) promptText = "▼ Press 'A' to Talk"; }
+            
+            const promptEl = document.getElementById('action-prompt'); if (promptText !== "") { promptEl.innerText = promptText; promptEl.style.display = 'block'; } else { promptEl.style.display = 'none'; }
+            camera.position.x += (playerMesh.position.x - camera.position.x) * 0.1; camera.position.z += (playerMesh.position.z + 8 - camera.position.z) * 0.1; camera.lookAt(playerMesh.position);
+        }
+        renderer.render(scene, camera);
+    }
+    animate();
+    window.addEventListener('resize', () => { camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+</script>
+</body>
+</html>
