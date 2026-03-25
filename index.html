@@ -148,7 +148,7 @@
     },
 
     // NEW: Function to load 3D Models and hide the placeholder boxes
-    replaceWithModel: function(placeholderMesh, modelUrl, scale = 1, offsetY = 0) {
+    replaceWithModel: function(placeholderMesh, modelUrl, scale = 1, offsetY = 0, onLoadCallback = null) {
         this.gltfLoader.load(modelUrl, (gltf) => {
             const model = gltf.scene;
             model.scale.set(scale, scale, scale);
@@ -164,6 +164,8 @@
 
             placeholderMesh.add(model); // Attach model to the box
             placeholderMesh.material.visible = false; // Hide the colored box!
+
+            if (onLoadCallback) onLoadCallback(gltf); // Trigger animation setup!
         }, undefined, (error) => {
             console.error("Error loading model:", modelUrl, error);
         });
@@ -216,8 +218,42 @@
     const stadiumGroup = new THREE.Group(); const battleGroup = new THREE.Group();
     scene.add(worldGroup); scene.add(hospitalGroup); scene.add(stadiumGroup); scene.add(battleGroup);
 
+
+    // --- NEW PLAYER ANIMATION SETUP ---
+    let playerMixer; 
+    let playerActions = {}; 
+    let activeAction; 
+    
+    function fadeToAnimation(animName) {
+        const newAction = playerActions[animName];
+        if (!newAction || activeAction === newAction) return;
+        const previousAction = activeAction;
+        activeAction = newAction;
+        if (previousAction) previousAction.fadeOut(0.2);
+        activeAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.2).play();
+    }
+
     const playerMesh = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffff00 })); playerMesh.position.y = 0.5; scene.add(playerMesh);
-    GameAPI.replaceWithModel(playerMesh, 'models/player.glb', 0.5, -0.5);
+    
+    // Load model and extract animations
+    GameAPI.replaceWithModel(playerMesh, 'models/player.glb', 0.5, -0.5, (gltf) => {
+        playerMixer = new THREE.AnimationMixer(gltf.scene);
+        
+        // IMPORTANT: Put your exact exact animation names here!
+        const idleClip = THREE.AnimationClip.findByName(gltf.animations, "Idle") || gltf.animations[8];
+        const walkClip = THREE.AnimationClip.findByName(gltf.animations, "Walk") || gltf.animations[0];
+
+        if (idleClip) playerActions['Idle'] = playerMixer.clipAction(idleClip);
+        if (walkClip) playerActions['Walk'] = playerMixer.clipAction(walkClip);
+
+        // Start by playing Idle
+        if (playerActions['Idle']) {
+            activeAction = playerActions['Idle'];
+            activeAction.play();
+        }
+    });
+
+
     const ground = createMesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ color: 0x228B22 }), false, true); ground.rotation.x = -Math.PI / 2; worldGroup.add(ground);
     GameAPI.applyTexture(ground, 'textures/grass.jpg', 20, 20);
     //GameAPI.replaceWithModel(ground, 'models/grass.glb', 1, 0); // Add this line to replace the ground with a model
@@ -482,7 +518,10 @@
     // ==========================================
     // 6. GAME LOOP
     // ==========================================
-    const clock = new THREE.Clock(); const moveSpeed = 0.12; GameLogic.updateHUD();
+    const clock = new THREE.Clock(); 
+    const animationClock = new THREE.Clock(); // Required to update the character bones
+    const moveSpeed = 0.12; 
+    GameLogic.updateHUD();
 
     function checkCollision(nx, nz) {
         if(currentRoom === "WORLD") { let l = 49.5; if(nx<-l||nx>l||nz<-l||nz>l) return true; if(Math.abs(nx-hospExt.position.x)<2.5&&Math.abs(nz-hospExt.position.z)<2.5) return true; if(Math.abs(nx-stadExt.position.x)<3.0&&Math.abs(nz-stadExt.position.z)<2.5) return true; } 
@@ -491,7 +530,15 @@
     }
 
     function animate() {
-        requestAnimationFrame(animate); const elapsedTime = clock.getElapsedTime();
+        requestAnimationFrame(animate); 
+        const elapsedTime = clock.getElapsedTime();
+        const delta = animationClock.getDelta();
+        
+        // --- Update the 3D GLB Animations ---
+        if (playerMixer) {
+            playerMixer.update(delta);
+        }
+
         bossNPC.position.y = 1 + Math.sin(elapsedTime * 2) * 0.2;
         if(typeof nurseJoy !== 'undefined') nurseJoy.rotation.y = Math.sin(elapsedTime * 1.5) * 0.3; // FIX: Nurse rotates again
 
@@ -503,8 +550,16 @@
             if (moved) {
                 if(!checkCollision(playerMesh.position.x+dx, playerMesh.position.z)) playerMesh.position.x += dx;
                 if(!checkCollision(playerMesh.position.x, playerMesh.position.z+dz)) playerMesh.position.z += dz;
-                playerMesh.position.y = 0.5 + Math.abs(Math.sin(elapsedTime * 15)) * 0.2; playerMesh.rotation.z = Math.sin(elapsedTime*15)*0.1; playerMesh.rotation.y = Math.atan2(dx, dz);
-            } else { playerMesh.position.y = 0.5 + Math.sin(elapsedTime * 3) * 0.02; playerMesh.rotation.z = 0; }
+                
+                playerMesh.rotation.y = Math.atan2(dx, dz); // Keep rotating character direction
+                fadeToAnimation('Walk'); // Ensure exact animation name matches!
+            } else { 
+                fadeToAnimation('Idle'); // Ensure exact animation name matches!
+            }
+
+            // Ensure Y position stays flat (removing old procedural bounce math)
+            playerMesh.position.y = 0.5; 
+            playerMesh.rotation.z = 0;
 
             if (moved && currentRoom === "WORLD" && Math.random() < 0.005) BattleSystem.startWildEncounter();
 
