@@ -212,7 +212,10 @@
     scene.add(new THREE.AmbientLight(0x909090)); 
     // Slightly warm yellow sun
     const sun = new THREE.DirectionalLight(0xfffaee, 1.5); 
-    sun.position.set(20, 40, 20); 
+    sun.position.set(20, 40, 20);
+    // Sky color (light blue), Ground color (dark green/brown), Intensity
+    const hemiLight = new THREE.HemisphereLight(0xddeeff, 0x223311, 0.6);
+    scene.add(hemiLight); 
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048; sun.shadow.mapSize.height = 2048; scene.add(sun);
 
@@ -236,6 +239,7 @@
         if (previousAction) previousAction.fadeOut(0.2);
         activeAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.2).play();
     }
+
 
     const playerMesh = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffff00 })); playerMesh.position.y = 0.5; scene.add(playerMesh);
     
@@ -269,14 +273,48 @@
 
     hospitalGroup.visible = false;
     const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); hDesk.position.set(0, 0.75, -4); hospitalGroup.add(hDesk);
+    // Add a warm glowing light inside the hospital room
+    const hospitalLight = new THREE.PointLight(0xffeedd, 1.5, 15); // Color, Intensity, Distance
+    hospitalLight.position.set(0, 3, -3); // Hang it above Nurse Joy
+    hospitalGroup.add(hospitalLight);
+    // --- NEW NURSE JOY ANIMATION SETUP ---
+    let nurseMixer;
+    let nurseGreetAction;
+    let isNurseGreeting = false; // Tracks if the player is currently standing at the desk
+
     const nurseJoy = createMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff66cc })); nurseJoy.position.set(0, 1.5, -5); hospitalGroup.add(nurseJoy);
-    GameAPI.replaceWithModel(nurseJoy, 'models/nurse.glb', 1, -0.75);
+    
+    // Load model and extract the single animation
+    GameAPI.replaceWithModel(nurseJoy, 'models/nurse.glb', 0.67, -0.75, (gltf) => {
+        nurseMixer = new THREE.AnimationMixer(gltf.scene);
+        
+        // Find the greet animation (fallback to the first one if named differently)
+        const greetClip = THREE.AnimationClip.findByName(gltf.animations, "Greet") || gltf.animations[0];
+        
+        if (greetClip) {
+            nurseGreetAction = nurseMixer.clipAction(greetClip);
+            // Force it to play exactly once and stop on the last frame
+            nurseGreetAction.setLoop(THREE.LoopOnce, 1);
+            nurseGreetAction.clampWhenFinished = true; 
+        }
+    });
     const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); hExit.rotation.x = -Math.PI/2; hExit.position.set(0, 0.01, 7); hospitalGroup.add(hExit);
     
     stadiumGroup.visible = false;
     const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); bossNPC.position.set(0, 1, -6); stadiumGroup.add(bossNPC);
     GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1);
     const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); sExit.rotation.x = -Math.PI/2; sExit.position.set(0, 0.01, 9); stadiumGroup.add(sExit);
+    // --- ADD STADIUM BOSS LIGHTING ---
+    // A dramatic, slightly purple/cool-white light for the boss arena
+    const stadiumLight = new THREE.PointLight(0xddeeff, 2, 20); // Color, Intensity, Distance
+    stadiumLight.position.set(0, 4, -4); // Hang it high up, shining down near the boss
+    stadiumGroup.add(stadiumLight);
+
+    // Optional: Add a subtle under-glow exactly where the boss is standing
+    const bossAuraLight = new THREE.PointLight(0x9900ff, 1.0, 5); // Psychic purple glow
+    bossAuraLight.position.set(0, 0.5, -6);
+    stadiumGroup.add(bossAuraLight);
+
 
     battleGroup.visible = false;
     const battleFloor = createMesh(new THREE.CylinderGeometry(8, 8, 0.5, 32), new THREE.MeshLambertMaterial({ color: 0xddeedd })); battleGroup.add(battleFloor);
@@ -544,7 +582,44 @@
         }
 
         bossNPC.position.y = 1 + Math.sin(elapsedTime * 2) * 0.2;
-        if(typeof nurseJoy !== 'undefined') nurseJoy.rotation.y = Math.sin(elapsedTime * 1.5) * 0.3; // FIX: Nurse rotates again
+        // --- NURSE JOY INTERACTION & ANIMATION LOGIC ---
+        if (nurseMixer) nurseMixer.update(delta);
+
+        if (typeof nurseJoy !== 'undefined') {
+            let targetRotation = 0;
+            let isPlayerNear = (currentRoom === "HOSPITAL" && playerMesh.position.distanceTo(hDesk.position) < 3.5);
+
+            if (isPlayerNear) {
+                targetRotation = 0; // Face the player directly
+
+                // If the player JUST walked up to the desk...
+                if (!isNurseGreeting) {
+                    isNurseGreeting = true; // Mark that she is greeting
+                    if (nurseGreetAction) {
+                        nurseGreetAction.reset(); // Rewind to start
+                        nurseGreetAction.setEffectiveTimeScale(1);
+                        nurseGreetAction.setEffectiveWeight(1);
+                        nurseGreetAction.fadeIn(0.2); // Smoothly blend into the greeting
+                        nurseGreetAction.play();
+                    }
+                }
+            } else {
+                targetRotation = Math.sin(elapsedTime * 1.5) * 0.3; // Resume swaying math
+
+                // If the player JUST walked away...
+                if (isNurseGreeting) {
+                    isNurseGreeting = false; // Mark that player left
+                    if (nurseGreetAction) {
+                        // Smoothly fade out the animation over 0.5s so she returns to her normal resting pose
+                        nurseGreetAction.fadeOut(0.5); 
+                    }
+                }
+            }
+
+            // Smoothly ease her rotation toward the target (so she doesn't snap)
+            nurseJoy.rotation.y += (targetRotation - nurseJoy.rotation.y) * 0.1;
+        }
+        // ------------------------------------------------
 
         if (gameState === "FREE_ROAM") {
             let moved = false; let dx = 0, dz = 0;
