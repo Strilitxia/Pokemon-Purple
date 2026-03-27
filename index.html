@@ -240,6 +240,29 @@
         activeAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(0.2).play();
     }
 
+    // --- NEW NURSE JOY ANIMATION SETUP ---
+    let nurseMixer;
+    let nurseGreetAction;
+    let isNurseGreeting = false; // Tracks if the player is currently standing at the desk
+
+    //--------------------------------------------------------------------------------------
+    // --- NEW BOSS ANIMATION SETUP ---
+    let bossMixer;
+    let bossActions = {};
+    let activeBossAction;
+    let bossState = 'SLEEP'; // States: SLEEP, WAKING, GREET, BYE
+    let wasInStadium = false;
+    let wasNearBoss = false;
+
+    function fadeBossAnimation(animName, duration = 0.3) {
+        const newAction = bossActions[animName];
+        if (!newAction || activeBossAction === newAction) return;
+        const previousAction = activeBossAction;
+        activeBossAction = newAction;
+        if (previousAction) previousAction.fadeOut(duration);
+        activeBossAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+    }
+    //---------------------------------------------------------------------------------------
 
     const playerMesh = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffff00 })); playerMesh.position.y = 0.5; scene.add(playerMesh);
     
@@ -271,17 +294,14 @@
     const stadExt = createMesh(new THREE.CylinderGeometry(5, 5, 4, 16), new THREE.MeshLambertMaterial({ color: 0x888888 })); stadExt.position.set(10, 2, -15); worldGroup.add(stadExt);
     const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false); stadDoor.position.set(10, 1.25, -9.99); worldGroup.add(stadDoor);
 
+
+// --- HOSPITAL ROOM SETUP ---
     hospitalGroup.visible = false;
     const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); hDesk.position.set(0, 0.75, -4); hospitalGroup.add(hDesk);
     // Add a warm glowing light inside the hospital room
     const hospitalLight = new THREE.PointLight(0xffeedd, 1.5, 15); // Color, Intensity, Distance
     hospitalLight.position.set(0, 3, -3); // Hang it above Nurse Joy
     hospitalGroup.add(hospitalLight);
-    // --- NEW NURSE JOY ANIMATION SETUP ---
-    let nurseMixer;
-    let nurseGreetAction;
-    let isNurseGreeting = false; // Tracks if the player is currently standing at the desk
-
     const nurseJoy = createMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff66cc })); nurseJoy.position.set(0, 1.5, -5); hospitalGroup.add(nurseJoy);
     
     // Load model and extract the single animation
@@ -300,22 +320,73 @@
     });
     const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); hExit.rotation.x = -Math.PI/2; hExit.position.set(0, 0.01, 7); hospitalGroup.add(hExit);
     
+
+// --- STADIUM BOSS SETUP ---
     stadiumGroup.visible = false;
     const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); bossNPC.position.set(0, 1, -6); stadiumGroup.add(bossNPC);
-    GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1);
+    // Load model and extract animations
+    GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1, (gltf) => {
+        bossMixer = new THREE.AnimationMixer(gltf.scene);
+        
+        // Find clips (using fallbacks [0], [1], [2], [3] if names don't match)
+        const sleepClip = THREE.AnimationClip.findByName(gltf.animations, "Sleep") || gltf.animations[17];
+        const wakeClip  = THREE.AnimationClip.findByName(gltf.animations, "Wake")  || gltf.animations[18];
+        const getdownClip = THREE.AnimationClip.findByName(gltf.animations, "Getdown") || gltf.animations[15];
+        const greetClip = THREE.AnimationClip.findByName(gltf.animations, "Greet") || gltf.animations[19];
+        const byeClip   = THREE.AnimationClip.findByName(gltf.animations, "Bye")   || gltf.animations[23];
+        
+        // Setup looping for Sleep
+        if (sleepClip) {
+            bossActions['Sleep'] = bossMixer.clipAction(sleepClip);
+        }
+        
+        // Setup Play-Once logic for all transition animations
+        [ 
+            {clip: wakeClip, name: 'Wake'}, 
+            {clip: getdownClip, name: 'Getdown'}, 
+            {clip: greetClip, name: 'Greet'}, 
+            {clip: byeClip, name: 'Bye'} 
+        ].forEach(anim => {
+            if (anim.clip) {
+                bossActions[anim.name] = bossMixer.clipAction(anim.clip);
+                bossActions[anim.name].setLoop(THREE.LoopOnce, 1);
+                bossActions[anim.name].clampWhenFinished = true; // Hold last frame when done
+            }
+        });
+
+        // Default state: Sleeping
+        if (bossActions['Sleep']) {
+            activeBossAction = bossActions['Sleep'];
+            activeBossAction.play();
+        }
+
+        // --- THE ANIMATION CHAINING LISTENER ---
+        bossMixer.addEventListener('finished', (e) => {
+            // 1. When 'Wake' finishes playing, immediately play 'Getdown'
+            if (e.action === bossActions['Wake']) {
+                bossState = 'GETDOWN';
+                fadeBossAnimation('Getdown', 0.2); // Smooth 0.2s transition into getting down
+            }
+            // 2. When 'Bye' finishes playing, go back to 'Sleep'
+            else if (e.action === bossActions['Bye']) {
+                bossState = 'SLEEP';
+                fadeBossAnimation('Sleep', 0.5);
+            }
+        });
+    });
     const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); sExit.rotation.x = -Math.PI/2; sExit.position.set(0, 0.01, 9); stadiumGroup.add(sExit);
     // --- ADD STADIUM BOSS LIGHTING ---
     // A dramatic, slightly purple/cool-white light for the boss arena
     const stadiumLight = new THREE.PointLight(0xddeeff, 2, 20); // Color, Intensity, Distance
     stadiumLight.position.set(0, 4, -4); // Hang it high up, shining down near the boss
     stadiumGroup.add(stadiumLight);
-
     // Optional: Add a subtle under-glow exactly where the boss is standing
     const bossAuraLight = new THREE.PointLight(0x9900ff, 1.0, 5); // Psychic purple glow
     bossAuraLight.position.set(0, 0.5, -6);
     stadiumGroup.add(bossAuraLight);
 
 
+// --- BATTLE ARENA SETUP ---
     battleGroup.visible = false;
     const battleFloor = createMesh(new THREE.CylinderGeometry(8, 8, 0.5, 32), new THREE.MeshLambertMaterial({ color: 0xddeedd })); battleGroup.add(battleFloor);
     const bPlayerMesh = createMesh(new THREE.BoxGeometry(1.5, 1.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xffff00 })); bPlayerMesh.position.set(-2, 1, 3); battleGroup.add(bPlayerMesh);
@@ -620,6 +691,40 @@
             nurseJoy.rotation.y += (targetRotation - nurseJoy.rotation.y) * 0.1;
         }
         // ------------------------------------------------
+        // --- BOSS NPC ANIMATION STATE MACHINE ---
+        if (bossMixer) bossMixer.update(delta);
+
+        const isInStadium = (currentRoom === "STADIUM");
+        const isNearBoss = (playerMesh.position.distanceTo(bossNPC.position) < 3.5);
+
+        // 1. Player JUST entered Stadium -> Wake up!
+        if (isInStadium && !wasInStadium) {
+            bossState = 'WAKING';
+            fadeBossAnimation('Wake', 0.5);
+        }
+        
+        // 2. Player gets NEAR boss -> Greet!
+        if (isInStadium && isNearBoss && !wasNearBoss && bossState !== 'GREET') {
+            bossState = 'GREET';
+            fadeBossAnimation('Greet', 0.3);
+        }
+
+        // 3. Player moves AWAY from boss -> Bye! (Listener handles returning to Sleep)
+        if (isInStadium && !isNearBoss && wasNearBoss && bossState === 'GREET') {
+            bossState = 'BYE';
+            fadeBossAnimation('Bye', 0.3);
+        }
+
+        // 4. Player completely left the Stadium (Failsafe reset)
+        if (!isInStadium && wasInStadium) {
+            bossState = 'SLEEP';
+            fadeBossAnimation('Sleep', 0.3);
+        }
+
+        // Update trackers for the next frame
+        wasInStadium = isInStadium;
+        wasNearBoss = isNearBoss;
+        // ----------------------------------------
 
         if (gameState === "FREE_ROAM") {
             let moved = false; let dx = 0, dz = 0;
