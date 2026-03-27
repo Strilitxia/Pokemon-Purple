@@ -284,18 +284,60 @@
         }
     });
 
-
+//---WORLD MAP SETUP ----------------------------------------------------------------
     const ground = createMesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ color: 0x228B22 }), false, true); ground.rotation.x = -Math.PI / 2; worldGroup.add(ground);
     GameAPI.applyTexture(ground, 'textures/grass.jpg', 20, 20);
-    //GameAPI.replaceWithModel(ground, 'models/grass.glb', 1, 0); // Add this line to replace the ground with a model
+    // --- CUSTOM WORLD MAP DATA ---
+    const customMapData = [
+        { type: 'hospital', x: -6, z: -10 },
+        { type: 'arena', x: 12, z: -14 },
+        // Sample grass blocks
+        { type: 'grass', x: -8, z: 6 }, { type: 'grass', x: -6, z: 6 }, { type: 'grass', x: -4, z: 6 },
+        { type: 'grass', x: -8, z: 8 }, { type: 'grass', x: -6, z: 8 }, { type: 'grass', x: -4, z: 8 },
+        // Sample path
+        { type: 'path', x: 0, z: -4 }, { type: 'path', x: 0, z: -2 }, { type: 'path', x: 0, z: 0 }
+    ];
 
-    const hospExt = createMesh(new THREE.BoxGeometry(4, 3, 4), new THREE.MeshLambertMaterial({ color: 0xcc0000 })); hospExt.position.set(-5, 1.5, -10); worldGroup.add(hospExt);
-    const hospDoor = createMesh(new THREE.PlaneGeometry(1.5, 2), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false); hospDoor.position.set(-5, 1, -7.99); worldGroup.add(hospDoor);
-    const stadExt = createMesh(new THREE.CylinderGeometry(5, 5, 4, 16), new THREE.MeshLambertMaterial({ color: 0x888888 })); stadExt.position.set(10, 2, -15); worldGroup.add(stadExt);
-    const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false); stadDoor.position.set(10, 1.25, -9.99); worldGroup.add(stadDoor);
+    let grassZonesList = []; // Tracks grass locations for battles
 
+    // 1. Define buildings globally so collision checks don't break
+    const hospExt = createMesh(new THREE.BoxGeometry(4, 3, 4), new THREE.MeshLambertMaterial({ color: 0xcc0000 }));
+    const hospDoor = createMesh(new THREE.PlaneGeometry(1.5, 2), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false);
+    const stadExt = createMesh(new THREE.CylinderGeometry(5, 5, 4, 16), new THREE.MeshLambertMaterial({ color: 0x888888 }));
+    const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false);
 
-// --- HOSPITAL ROOM SETUP ---
+    // 2. Load Models & Build the World Dynamically
+    GameAPI.gltfLoader.load('models/grass.glb', (grassGltf) => {
+        customMapData.forEach(item => {
+            if (item.type === 'hospital') {
+                hospExt.position.set(item.x, 1.5, item.z);
+                hospDoor.position.set(item.x, 1, item.z + 2.01); // Door sits just in front
+                worldGroup.add(hospExt); worldGroup.add(hospDoor);
+            } 
+            else if (item.type === 'arena') {
+                stadExt.position.set(item.x, 2, item.z);
+                stadDoor.position.set(item.x, 1.25, item.z + 5.01); // Door sits just in front
+                worldGroup.add(stadExt); worldGroup.add(stadDoor);
+            } 
+            else if (item.type === 'grass') {
+                let grassClone = grassGltf.scene.clone();
+                grassClone.position.set(item.x, 0, item.z);
+                grassClone.rotation.y = Math.random() * Math.PI;
+                grassClone.scale.y = 0.8 + Math.random() * 0.4;
+                worldGroup.add(grassClone);
+                grassZonesList.push({ x: item.x, z: item.z }); // Save to list for battles
+            }
+            else if (item.type === 'path') {
+                const pathMesh = createMesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshLambertMaterial({ color: 0xd2b48c }), false, true);
+                pathMesh.rotation.x = -Math.PI / 2;
+                pathMesh.position.set(item.x, 0.05, item.z);
+                GameAPI.applyTexture(pathMesh, 'textures/path.jpg', 1, 1);
+                worldGroup.add(pathMesh);
+            }
+        });
+    });
+
+// --- HOSPITAL ROOM SETUP ----------------------------------------------------------------
     hospitalGroup.visible = false;
     const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); hDesk.position.set(0, 0.75, -4); hospitalGroup.add(hDesk);
     // Add a warm glowing light inside the hospital room
@@ -321,7 +363,7 @@
     const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); hExit.rotation.x = -Math.PI/2; hExit.position.set(0, 0.01, 7); hospitalGroup.add(hExit);
     
 
-// --- STADIUM BOSS SETUP ---
+// --- STADIUM BOSS SETUP --------------------------------------------------------------------
     stadiumGroup.visible = false;
     const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); bossNPC.position.set(0, 1, -6); stadiumGroup.add(bossNPC);
     // Load model and extract animations
@@ -384,6 +426,7 @@
     const bossAuraLight = new THREE.PointLight(0x9900ff, 1.0, 5); // Psychic purple glow
     bossAuraLight.position.set(0, 0.5, -6);
     stadiumGroup.add(bossAuraLight);
+//-------------------------------------------------------------------------------------------------
 
 
 // --- BATTLE ARENA SETUP ---
@@ -745,7 +788,25 @@
             playerMesh.position.y = 0.5; 
             playerMesh.rotation.z = 0;
 
-            if (moved && currentRoom === "WORLD" && Math.random() < 0.005) BattleSystem.startWildEncounter();
+            // --- TALL GRASS ENCOUNTER LOGIC ---
+            let inGrass = false;
+            if (currentRoom === "WORLD") {
+                // Check if player is standing on any specific grass tile (within 1 unit)
+                for (let i = 0; i < grassZonesList.length; i++) {
+                    let gx = grassZonesList[i].x;
+                    let gz = grassZonesList[i].z;
+                    if (Math.abs(playerMesh.position.x - gx) < 1.0 && Math.abs(playerMesh.position.z - gz) < 1.0) {
+                        inGrass = true;
+                        break;
+                    }
+                }
+            }
+
+            // High chance to trigger since they are actively stepping on a grass tile
+            if (moved && inGrass && Math.random() < 0.02) {
+                BattleSystem.startWildEncounter();
+            }
+            // ----------------------------------
 
             let promptText = "";
             if (currentRoom === "WORLD") { if (playerMesh.position.distanceTo(hospDoor.position) < 1.5) GameLogic.teleportTo("HOSPITAL", 0, 5); else if (playerMesh.position.distanceTo(stadDoor.position) < 2.0) GameLogic.teleportTo("STADIUM", 0, 7); } 
