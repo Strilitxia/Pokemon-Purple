@@ -295,10 +295,12 @@
         { type: 'grass', x: -8, z: 6 }, { type: 'grass', x: -6, z: 6 }, { type: 'grass', x: -4, z: 6 },
         { type: 'grass', x: -8, z: 8 }, { type: 'grass', x: -6, z: 8 }, { type: 'grass', x: -4, z: 8 },
         // Sample path
-        { type: 'path', x: 0, z: -4 }, { type: 'path', x: 0, z: -2 }, { type: 'path', x: 0, z: 0 }
+        { type: 'path', x: 0, z: -4 }, { type: 'path', x: 0, z: -2 }, { type: 'path', x: 0, z: 0 },
+        { type: 'fence', x: 0, z: -2, rotation: -1.57 }
     ];
 
-    let grassZonesList = []; // Tracks grass locations for battles
+    let grassZonesList = [];// Tracks grass locations for battles
+     let fenceZonesList = []; 
 
     // 1. Define buildings globally so collision checks don't break
     const hospExt = createMesh(new THREE.BoxGeometry(4, 3, 4), new THREE.MeshLambertMaterial({ color: 0xcc0000 }));
@@ -333,6 +335,38 @@
                 pathMesh.position.set(item.x, 0.05, item.z);
                 GameAPI.applyTexture(pathMesh, 'textures/path.jpg', 1, 1);
                 worldGroup.add(pathMesh);
+            }
+            
+        });
+    });
+
+    // --- UPDATED FENCE LOADER ---
+    GameAPI.gltfLoader.load('models/fence.glb', (fenceGltf) => {
+        customMapData.forEach(item => {
+            if (item.type === 'fence') {
+                let fenceClone = fenceGltf.scene.clone();
+                fenceClone.position.set(item.x, 0, item.z);
+                
+                let fenceRot = item.rotation || 0;
+                fenceClone.rotation.y = fenceRot;
+                
+                fenceClone.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                worldGroup.add(fenceClone); 
+                
+                // --- NEW: Calculate exact physical boundaries ---
+                // We force the game to apply the position and rotation first
+                fenceClone.updateMatrixWorld(true); 
+                // Then we wrap an invisible shrink-wrap box around the actual 3D mesh
+                let bbox = new THREE.Box3().setFromObject(fenceClone);
+                
+                // Save this exact box to our collision list
+                fenceZonesList.push(bbox); 
             }
         });
     });
@@ -680,9 +714,39 @@
     GameLogic.updateHUD();
 
     function checkCollision(nx, nz) {
-        if(currentRoom === "WORLD") { let l = 49.5; if(nx<-l||nx>l||nz<-l||nz>l) return true; if(Math.abs(nx-hospExt.position.x)<2.5&&Math.abs(nz-hospExt.position.z)<2.5) return true; if(Math.abs(nx-stadExt.position.x)<3.0&&Math.abs(nz-stadExt.position.z)<2.5) return true; } 
-        else if(currentRoom === "HOSPITAL") { if(nx<-7||nx>7||nz<-7||nz>7) return true; if(nx>-3.5&&nx<3.5&&nz>-5.5&&nz<-2.5) return true; } 
-        else if(currentRoom === "STADIUM") { if(nx<-9||nx>9||nz<-9||nz>9) return true; } return false;
+        if(currentRoom === "WORLD") { 
+            let l = 49.5; 
+            if(nx<-l||nx>l||nz<-l||nz>l) return true; 
+            if(Math.abs(nx-hospExt.position.x)<2.5&&Math.abs(nz-hospExt.position.z)<2.5) return true; 
+            if(Math.abs(nx-stadExt.position.x)<3.0&&Math.abs(nz-stadExt.position.z)<2.5) return true; 
+            
+            // --- UPDATED: EXACT BOUNDING BOX COLLISION ---
+            // Calculate where the edges of the player are (player radius is ~0.4)
+            let pxMin = nx - 0.4;
+            let pxMax = nx + 0.4;
+            let pzMin = nz - 0.4;
+            let pzMax = nz + 0.4;
+
+            for (let i = 0; i < fenceZonesList.length; i++) {
+                let bbox = fenceZonesList[i];
+                
+                // Check if the player's square overlaps with the fence's exact bounding box
+                if (pxMax > bbox.min.x && pxMin < bbox.max.x &&
+                    pzMax > bbox.min.z && pzMin < bbox.max.z) {
+                    return true; // Block movement!
+                }
+            }
+            // ----------------------------------------------
+            
+        } 
+        else if(currentRoom === "HOSPITAL") { 
+            if(nx<-7||nx>7||nz<-7||nz>7) return true; 
+            if(nx>-3.5&&nx<3.5&&nz>-5.5&&nz<-2.5) return true; 
+        } 
+        else if(currentRoom === "STADIUM") { 
+            if(nx<-9||nx>9||nz<-9||nz>9) return true; 
+        } 
+        return false;
     }
 
     function animate() {
