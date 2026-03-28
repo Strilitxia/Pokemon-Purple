@@ -289,7 +289,7 @@
     GameAPI.applyTexture(ground, 'textures/grass.jpg', 20, 20);
     // --- CUSTOM WORLD MAP DATA ---
     const customMapData = [
-        { type: 'hospital', x: -6, z: -10 },
+        { type: 'hospital', x: -10, z: -10 },
         { type: 'arena', x: 12, z: -14 },
         // Sample grass blocks
         { type: 'grass', x: -8, z: 6 }, { type: 'grass', x: -6, z: 6 }, { type: 'grass', x: -4, z: 6 },
@@ -307,6 +307,22 @@
     const hospDoor = createMesh(new THREE.PlaneGeometry(1.5, 2), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false);
     const stadExt = createMesh(new THREE.CylinderGeometry(5, 5, 4, 16), new THREE.MeshLambertMaterial({ color: 0x888888 }));
     const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false);
+
+    hospDoor.material.visible = true; // Hide the door mesh, we just need it for collision detection
+    stadDoor.material.visible = true;
+    GameAPI.replaceWithModel(stadExt, 'models/stadium_ext.glb', 1, -2, (gltf) => {
+        // NUDGE THE 3D MODEL HERE:
+        // Adjust these numbers until the 3D model perfectly aligns with the invisible door!
+        gltf.scene.position.x = 0; // Positive moves right, negative moves left
+        gltf.scene.position.z = 0; // Positive moves forward, negative moves backward
+    });
+
+    GameAPI.replaceWithModel(hospExt, 'models/hospital_ext.glb', 1, -8.05, (gltf) => {
+        // NUDGE THE 3D MODEL HERE:
+        // Adjust these numbers until the 3D model perfectly aligns with your door!
+        gltf.scene.position.x = -6.4; // Positive moves right, negative moves left
+        gltf.scene.position.z = 5; // Positive moves forward, negative moves backward
+    });
 
     // 2. Load Models & Build the World Dynamically
     GameAPI.gltfLoader.load('models/grass.glb', (grassGltf) => {
@@ -372,34 +388,65 @@
     });
 
 // --- HOSPITAL ROOM SETUP ----------------------------------------------------------------
+    // --- HOSPITAL ROOM SETUP ----------------------------------------------------------------
     hospitalGroup.visible = false;
-    const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); hDesk.position.set(0, 0.75, -4); hospitalGroup.add(hDesk);
+    
+    // --- NEW: Load Custom Interior Environment ---
+    const hospInt = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    hospInt.position.set(0, 0, 1); // Center of the room
+    hospitalGroup.add(hospInt);
+    GameAPI.replaceWithModel(hospInt, 'models/hospital_int.glb', 1, 0);
+
+    // --- NEW: Invisible Desk / Interaction Hitbox ---
+    // This is the physical box you bump into. Tweak the position so it lines up with your custom model's desk.
+    const hDesk = createMesh(new THREE.BoxGeometry(6, 1.5, 2), new THREE.MeshLambertMaterial({ color: 0xffaa00 })); 
+    hDesk.position.set(0, 0.75, -1.8); // <-- CHANGE Z position to match your new desk
+    hDesk.material.visible = false;  // Makes the box invisible!
+    hospitalGroup.add(hDesk);
+
     // Add a warm glowing light inside the hospital room
-    const hospitalLight = new THREE.PointLight(0xffeedd, 1.5, 15); // Color, Intensity, Distance
-    hospitalLight.position.set(0, 3, -3); // Hang it above Nurse Joy
+    const hospitalLight = new THREE.PointLight(0xffeedd, 1.5, 15); 
+    hospitalLight.position.set(0, 3, -3); 
     hospitalGroup.add(hospitalLight);
-    const nurseJoy = createMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff66cc })); nurseJoy.position.set(0, 1.5, -5); hospitalGroup.add(nurseJoy);
+    
+    // --- NEW: Reposition Nurse Joy ---
+    const nurseJoy = createMesh(new THREE.CylinderGeometry(0.5, 0.5, 1.5), new THREE.MeshLambertMaterial({ color: 0xff66cc })); 
+    nurseJoy.position.set(0, 1, -2.5); // <-- CHANGE Z position so she stands right behind your invisible desk
+    hospitalGroup.add(nurseJoy);
     
     // Load model and extract the single animation
     GameAPI.replaceWithModel(nurseJoy, 'models/nurse.glb', 0.67, -0.75, (gltf) => {
         nurseMixer = new THREE.AnimationMixer(gltf.scene);
-        
-        // Find the greet animation (fallback to the first one if named differently)
         const greetClip = THREE.AnimationClip.findByName(gltf.animations, "Greet") || gltf.animations[0];
         
         if (greetClip) {
             nurseGreetAction = nurseMixer.clipAction(greetClip);
-            // Force it to play exactly once and stop on the last frame
             nurseGreetAction.setLoop(THREE.LoopOnce, 1);
             nurseGreetAction.clampWhenFinished = true; 
         }
     });
-    const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); hExit.rotation.x = -Math.PI/2; hExit.position.set(0, 0.01, 7); hospitalGroup.add(hExit);
-    
+
+    const hExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); 
+    hExit.rotation.x = -Math.PI/2; 
+    hExit.position.set(0, 0.01, 7); 
+    hExit.material.visible = false; // Hide the exit mat if your model already has a door!
+    hospitalGroup.add(hExit);
+
 
 // --- STADIUM BOSS SETUP --------------------------------------------------------------------
     stadiumGroup.visible = false;
-    const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); bossNPC.position.set(0, 1, -6); stadiumGroup.add(bossNPC);
+    
+    // --- NEW: Load Custom Interior Arena ---
+    const stadInt = createMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    stadInt.position.set(0, 0, 0); // Center of the arena
+    stadiumGroup.add(stadInt);
+    GameAPI.replaceWithModel(stadInt, 'models/stadium_int.glb', 1, 0);
+
+    // --- Reposition Boss NPC ---
+    const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); 
+    bossNPC.position.set(0, 1, -6); // <-- CHANGE X and Z to move the boss to his throne
+    stadiumGroup.add(bossNPC);
+    
     // Load model and extract animations
     GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1, (gltf) => {
         bossMixer = new THREE.AnimationMixer(gltf.scene);
@@ -450,7 +497,12 @@
             }
         });
     });
-    const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); sExit.rotation.x = -Math.PI/2; sExit.position.set(0, 0.01, 9); stadiumGroup.add(sExit);
+    // --- FIXED & HIDDEN EXIT DOOR ---
+    const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); 
+    sExit.rotation.x = -Math.PI/2; 
+    sExit.position.set(0, 0.01, 7.5); // <-- Moved inward from 9 to 7.5 to fix the exit bug! Change X and Z to match your custom door.
+    sExit.material.visible = false;   // Make it invisible
+    stadiumGroup.add(sExit);
     // --- ADD STADIUM BOSS LIGHTING ---
     // A dramatic, slightly purple/cool-white light for the boss arena
     const stadiumLight = new THREE.PointLight(0xddeeff, 2, 20); // Color, Intensity, Distance
@@ -520,14 +572,18 @@
                 if(playerMesh.position.distanceTo(hDesk.position)<3.5) {
                     this.openMenu("Pokemon Center",[ { text: "Heal All Team", action: () => { PlayerState.team.forEach(p=>p.hp=p.maxHp); alert("Team Healed!"); this.updateHUD(); this.closeMenus();} }, { text: "Buy Food (10G)", action: () => { if(PlayerState.gold>=10){PlayerState.gold-=10; PlayerState.food++; this.updateHUD();}else alert("Not enough gold.");} } ]);
                 }
-                // FIX: Hospital Exit Logic Corrected
-                else if (playerMesh.position.distanceTo(hExit.position)<2) { this.teleportTo("WORLD", -5, -6); }
+                // --- FIXED: Spawn 2.0 units away so we don't accidentally auto-enter again! ---
+                else if (playerMesh.position.distanceTo(hExit.position)<2) { 
+                    this.teleportTo("WORLD", hospDoor.position.x, hospDoor.position.z + 2.0); 
+                }
             } else if (currentRoom === "STADIUM") {
                 if(playerMesh.position.distanceTo(bossNPC.position)<3) {
                     this.openMenu("Boss Mewtwo",[{ text: "Battle Boss!", action: () => { this.closeMenus(); BattleSystem.startBossFight(); } }]);
                 }
-                // FIX: Stadium Exit Logic Corrected
-                else if (playerMesh.position.distanceTo(sExit.position)<2) { this.teleportTo("WORLD", 10, -7); }
+                // --- FIXED: Spawn 2.5 units away (outside the 2.0 auto-enter radius) ---
+                else if (playerMesh.position.distanceTo(sExit.position)<2) { 
+                    this.teleportTo("WORLD", stadDoor.position.x, stadDoor.position.z + 2.5); 
+                }
             }
         },
         openMenu: function(t, btns) { gameState="MENU"; document.getElementById('int-title').innerText=t; let c=document.getElementById('int-buttons'); c.innerHTML=""; btns.forEach(b=>{let btn=document.createElement('button'); btn.innerText=b.text; btn.onclick=b.action; c.appendChild(btn);}); document.getElementById('interaction-menu').style.display='block'; },
@@ -740,12 +796,20 @@
             
         } 
         else if(currentRoom === "HOSPITAL") { 
-            if(nx<-7||nx>7||nz<-7||nz>7) return true; 
-            if(nx>-3.5&&nx<3.5&&nz>-5.5&&nz<-2.5) return true; 
-        } 
+            // 1. Check outer walls (adjust -7 / 7 if your new interior is bigger/smaller)
+            if(nx < -7 || nx > 7 || nz < -2.5 || nz > 6) return true; 
+            
+            // 2. Dynamic desk collision based on hDesk's position!
+            // If the player is within 3 units wide (X) and 1 unit deep (Z) of the desk center:
+            if(Math.abs(nx - hDesk.position.x) < 3.0 && Math.abs(nz - hDesk.position.z) < 1.0) {
+                return true; 
+            }
+        }
         else if(currentRoom === "STADIUM") { 
-            if(nx<-9||nx>9||nz<-9||nz>9) return true; 
-        } 
+            // Check outer walls (adjust -9 / 9 if your new interior is bigger/smaller)
+            // Example: if your room is long, change nz < -15 or nz > 15
+            if(nx < -9 || nx > 9 || nz < -9 || nz > 9) return true; 
+        }
         return false;
     }
 
