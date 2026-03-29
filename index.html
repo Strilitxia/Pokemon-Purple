@@ -309,12 +309,14 @@
     const stadDoor = createMesh(new THREE.PlaneGeometry(2, 2.5), new THREE.MeshBasicMaterial({ color: 0x000000 }), false, false);
 
     hospDoor.material.visible = true; // Hide the door mesh, we just need it for collision detection
-    stadDoor.material.visible = true;
-    GameAPI.replaceWithModel(stadExt, 'models/stadium_ext.glb', 1, -2, (gltf) => {
+    stadDoor.material.visible = false;
+    GameAPI.replaceWithModel(stadExt, 'models/stadium_ext.glb', 7, -2.1, (gltf) => {
         // NUDGE THE 3D MODEL HERE:
         // Adjust these numbers until the 3D model perfectly aligns with the invisible door!
         gltf.scene.position.x = 0; // Positive moves right, negative moves left
         gltf.scene.position.z = 0; // Positive moves forward, negative moves backward
+        let degreesToRotate = 90; 
+        gltf.scene.rotation.y = degreesToRotate * (Math.PI / 180);
     });
 
     GameAPI.replaceWithModel(hospExt, 'models/hospital_ext.glb', 1, -8.05, (gltf) => {
@@ -334,9 +336,17 @@
             } 
             else if (item.type === 'arena') {
                 stadExt.position.set(item.x, 2, item.z);
-                stadDoor.position.set(item.x, 1.25, item.z + 5.01); // Door sits just in front
+                
+                // --- REPOSITION THE STADIUM DOOR HERE ---
+                // Add or subtract from item.x (Left/Right) and item.z (Forward/Back)
+                // Example: item.x + 2 will move the door 2 units to the right
+                // Example: item.z + 7 will move the door further out to the front
+                let doorOffsetX = 0; 
+                let doorOffsetZ = 10; 
+                
+                stadDoor.position.set(item.x + doorOffsetX, 1.25, item.z + doorOffsetZ);
                 worldGroup.add(stadExt); worldGroup.add(stadDoor);
-            } 
+            }
             else if (item.type === 'grass') {
                 let grassClone = grassGltf.scene.clone();
                 grassClone.position.set(item.x, 0, item.z);
@@ -444,11 +454,11 @@
 
     // --- Reposition Boss NPC ---
     const bossNPC = createMesh(new THREE.CylinderGeometry(0.8, 0.8, 2), new THREE.MeshLambertMaterial({ color: 0x9900ff })); 
-    bossNPC.position.set(0, 1, -6); // <-- CHANGE X and Z to move the boss to his throne
+    bossNPC.position.set(0.18, 0, 0); // <-- CHANGE X and Z to move the boss to his throne
     stadiumGroup.add(bossNPC);
     
     // Load model and extract animations
-    GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -1, (gltf) => {
+    GameAPI.replaceWithModel(bossNPC, 'models/boss.glb', 1, -0.3, (gltf) => {
         bossMixer = new THREE.AnimationMixer(gltf.scene);
         
         // Find clips (using fallbacks [0], [1], [2], [3] if names don't match)
@@ -500,7 +510,7 @@
     // --- FIXED & HIDDEN EXIT DOOR ---
     const sExit = createMesh(new THREE.PlaneGeometry(3, 1), new THREE.MeshBasicMaterial({ color: 0x222222 }), false, false); 
     sExit.rotation.x = -Math.PI/2; 
-    sExit.position.set(0, 0.01, 7.5); // <-- Moved inward from 9 to 7.5 to fix the exit bug! Change X and Z to match your custom door.
+    sExit.position.set(0, 0.01, 10); // <-- Moved inward from 9 to 7.5 to fix the exit bug! Change X and Z to match your custom door.
     sExit.material.visible = false;   // Make it invisible
     stadiumGroup.add(sExit);
     // --- ADD STADIUM BOSS LIGHTING ---
@@ -577,7 +587,7 @@
                     this.teleportTo("WORLD", hospDoor.position.x, hospDoor.position.z + 2.0); 
                 }
             } else if (currentRoom === "STADIUM") {
-                if(playerMesh.position.distanceTo(bossNPC.position)<3) {
+                if(playerMesh.position.distanceTo(bossNPC.position)<0.3) {
                     this.openMenu("Boss Mewtwo",[{ text: "Battle Boss!", action: () => { this.closeMenus(); BattleSystem.startBossFight(); } }]);
                 }
                 // --- FIXED: Spawn 2.5 units away (outside the 2.0 auto-enter radius) ---
@@ -768,13 +778,17 @@
     const animationClock = new THREE.Clock(); // Required to update the character bones
     const moveSpeed = 0.12; 
     GameLogic.updateHUD();
+    // DEV MODE: Force spawn inside the stadium
+    GameLogic.teleportTo("STADIUM", 0, 6);
 
     function checkCollision(nx, nz) {
         if(currentRoom === "WORLD") { 
             let l = 49.5; 
             if(nx<-l||nx>l||nz<-l||nz>l) return true; 
-            if(Math.abs(nx-hospExt.position.x)<2.5&&Math.abs(nz-hospExt.position.z)<2.5) return true; 
-            if(Math.abs(nx-stadExt.position.x)<3.0&&Math.abs(nz-stadExt.position.z)<2.5) return true; 
+            if(Math.abs(nx-hospExt.position.x)<5&&Math.abs(nz-hospExt.position.z)<3) return true; 
+            if (Math.abs(nx - stadExt.position.x) < 15.0 && Math.abs(nz - stadExt.position.z) < 10.0) {
+                return true; 
+            } 
             
             // --- UPDATED: EXACT BOUNDING BOX COLLISION ---
             // Calculate where the edges of the player are (player radius is ~0.4)
@@ -806,9 +820,14 @@
             }
         }
         else if(currentRoom === "STADIUM") { 
-            // Check outer walls (adjust -9 / 9 if your new interior is bigger/smaller)
-            // Example: if your room is long, change nz < -15 or nz > 15
-            if(nx < -9 || nx > 9 || nz < -9 || nz > 9) return true; 
+            // 1. Check outer walls
+            if(nx < -9 || nx > 9 || nz < -9 || nz > 10) return true; 
+            
+            // --- NEW: Boss Collision Box ---
+            // If the player is within 1.5 units (Left/Right) and 1.5 units (Front/Back) of the boss:
+            if(Math.abs(nx - bossNPC.position.x) < 2 && Math.abs(nz - bossNPC.position.z) < 2.5) {
+                return true; // Block movement!
+            }
         }
         return false;
     }
